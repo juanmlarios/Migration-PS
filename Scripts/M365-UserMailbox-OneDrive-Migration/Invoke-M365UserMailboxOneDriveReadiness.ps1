@@ -80,6 +80,28 @@ function Get-PersonalSiteMatch {
     return $site
 }
 
+function Disconnect-ReadinessSessions {
+    if (Get-Command Disconnect-ExchangeOnline -ErrorAction SilentlyContinue) {
+        Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue
+    }
+
+    Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+}
+
+function Enter-PhaseBoundary {
+    param(
+        [Parameter(Mandatory = $true)][string]$CompletedPhase,
+        [Parameter(Mandatory = $true)][string]$NextPhase
+    )
+
+    Write-Host ""
+    Write-Host ("Completed {0} checks." -f $CompletedPhase) -ForegroundColor Cyan
+    Write-Host ("Disconnected Microsoft Graph and Exchange Online sessions for {0}." -f $CompletedPhase) -ForegroundColor Cyan
+    Write-Host ("Next step: sign in to the {0} tenant when prompted." -f $NextPhase) -ForegroundColor Cyan
+    Read-Host ("Press Enter to continue to the {0} tenant" -f $NextPhase) | Out-Null
+    Write-Host ""
+}
+
 Ensure-Module -Name ExchangeOnlineManagement
 Ensure-Module -Name Microsoft.Online.SharePoint.PowerShell
 Ensure-Module -Name Microsoft.Graph
@@ -216,8 +238,8 @@ Where-Object {
 } |
 Select-Object DisplayName, Alias, RecipientTypeDetails, PrimarySmtpAddress, WindowsEmailAddress, EmailAddresses
 
-Disconnect-ExchangeOnline -Confirm:$false
-Disconnect-MgGraph | Out-Null
+Disconnect-ReadinessSessions
+Enter-PhaseBoundary -CompletedPhase "source tenant" -NextPhase "target"
 
 Write-Host "Connecting to target Microsoft Graph..."
 Connect-GraphInteractive -TenantLabel "Target" -Scopes @("Directory.Read.All", "User.Read.All", "Organization.Read.All") -ExpectedTenantId $TargetTenantId -UseDeviceCode:$UseDeviceCode | Out-Null
@@ -276,8 +298,7 @@ $targetReadiness = foreach ($row in $sourceMailboxBaseline) {
     }
 }
 
-Disconnect-ExchangeOnline -Confirm:$false
-Disconnect-MgGraph | Out-Null
+Disconnect-ReadinessSessions
 
 Export-Data -Data $sourceMailboxBaseline -Path (Join-Path $outDir "source-mailbox-baseline.csv")
 Export-Data -Data $sourceOneDriveBaseline -Path (Join-Path $outDir "source-onedrive-baseline.csv")
