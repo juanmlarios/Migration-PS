@@ -211,7 +211,18 @@ function Connect-GraphInteractive {
 
     Write-ConnectionBanner -Workload "Microsoft Graph" -TenantLabel $TenantLabel -ExpectedTenantId $ExpectedTenantId -UseDeviceCode:$UseDeviceCode
 
-    Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+    $existingContext = Get-MgContext -ErrorAction SilentlyContinue
+    if ($existingContext) {
+        $tenantMatches = (-not $ExpectedTenantId) -or ($existingContext.TenantId -eq $ExpectedTenantId)
+        $missingScopes = @($Scopes | Where-Object { $_ -notin @($existingContext.Scopes) })
+
+        if ($tenantMatches -and $missingScopes.Count -eq 0) {
+            Write-Host ("[Auth] Reusing Microsoft Graph context | tenantId={0} | account={1}" -f $existingContext.TenantId, $existingContext.Account)
+            return $existingContext
+        }
+
+        Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+    }
 
     $connectCommand = Get-Command Connect-MgGraph
     $connectParams = @{
@@ -227,16 +238,12 @@ function Connect-GraphInteractive {
     }
 
     if ($UseDeviceCode.IsPresent) {
-        if ($connectCommand.Parameters.ContainsKey("UseDeviceAuthentication")) {
-            Connect-MgGraph @connectParams -UseDeviceAuthentication
-        } else {
-            $deviceParam = $connectCommand.Parameters.ContainsKey("UseDeviceCode")
-            if (-not $deviceParam) {
-                throw "The installed Microsoft.Graph.Authentication module does not support device code authentication. Update the module and retry."
-            }
-
-            Connect-MgGraph @connectParams -UseDeviceCode
+        $deviceParam = $connectCommand.Parameters.ContainsKey("UseDeviceCode")
+        if (-not $deviceParam) {
+            throw "The installed Microsoft.Graph.Authentication module does not support -UseDeviceCode. Update the module and retry."
         }
+
+        Connect-MgGraph @connectParams -UseDeviceCode
     } else {
         Connect-MgGraph @connectParams
     }
