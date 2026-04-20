@@ -63,6 +63,9 @@ param(
     [switch]$UseDeviceCode,
 
     [Parameter(Mandatory = $false)]
+    [switch]$DisableExchangeWAM,
+
+    [Parameter(Mandatory = $false)]
     [string]$OutputRoot = ".\Output"
 )
 
@@ -165,7 +168,7 @@ switch ($Phase) {
     "PrepareTargetMailUsers" {
         Require-Parameter -Name "TemporaryPasswordPlainText" -Value $TemporaryPasswordPlainText
 
-        Connect-ExchangeInteractive -TenantLabel "Target" -ExpectedTenantId $TargetTenantId -AdminUpn $TargetAdminUpn -UseDeviceCode:$UseDeviceCode | Out-Null
+        Connect-ExchangeInteractive -TenantLabel "Target" -ExpectedTenantId $TargetTenantId -AdminUpn $TargetAdminUpn -UseDeviceCode:$UseDeviceCode -DisableWAM:$DisableExchangeWAM | Out-Null
         $password = Get-TempPassword -PlainText $TemporaryPasswordPlainText
         $results = [System.Collections.Generic.List[object]]::new()
 
@@ -267,7 +270,7 @@ switch ($Phase) {
         Require-Parameter -Name "BatchName" -Value $BatchName
         Require-Parameter -Name "TargetDeliveryDomain" -Value $TargetDeliveryDomain
 
-        Connect-ExchangeInteractive -TenantLabel "Target" -ExpectedTenantId $TargetTenantId -AdminUpn $TargetAdminUpn -UseDeviceCode:$UseDeviceCode | Out-Null
+        Connect-ExchangeInteractive -TenantLabel "Target" -ExpectedTenantId $TargetTenantId -AdminUpn $TargetAdminUpn -UseDeviceCode:$UseDeviceCode -DisableWAM:$DisableExchangeWAM | Out-Null
 
         $batchCsvPath = Join-Path $outDir "$BatchName-users.csv"
         $batchRows = $migrationRows | ForEach-Object {
@@ -328,7 +331,7 @@ switch ($Phase) {
     "ReaddressSourceMailUsersForDomainRelease" {
         Require-Parameter -Name "TargetDeliveryDomain" -Value $TargetDeliveryDomain
 
-        Connect-ExchangeInteractive -TenantLabel "Source" -ExpectedTenantId $SourceTenantId -AdminUpn $SourceAdminUpn -UseDeviceCode:$UseDeviceCode | Out-Null
+        Connect-ExchangeInteractive -TenantLabel "Source" -ExpectedTenantId $SourceTenantId -AdminUpn $SourceAdminUpn -UseDeviceCode:$UseDeviceCode -DisableWAM:$DisableExchangeWAM | Out-Null
         $results = [System.Collections.Generic.List[object]]::new()
 
         foreach ($row in $migrationRows) {
@@ -360,7 +363,7 @@ switch ($Phase) {
     }
 
     "SetTargetPrimaryAddresses" {
-        Connect-ExchangeInteractive -TenantLabel "Target" -ExpectedTenantId $TargetTenantId -AdminUpn $TargetAdminUpn -UseDeviceCode:$UseDeviceCode | Out-Null
+        Connect-ExchangeInteractive -TenantLabel "Target" -ExpectedTenantId $TargetTenantId -AdminUpn $TargetAdminUpn -UseDeviceCode:$UseDeviceCode -DisableWAM:$DisableExchangeWAM | Out-Null
         Connect-GraphInteractive -TenantLabel "Target" -Scopes @("User.ReadWrite.All", "Directory.Read.All") -ExpectedTenantId $TargetTenantId -UseDeviceCode:$UseDeviceCode | Out-Null
         $results = [System.Collections.Generic.List[object]]::new()
 

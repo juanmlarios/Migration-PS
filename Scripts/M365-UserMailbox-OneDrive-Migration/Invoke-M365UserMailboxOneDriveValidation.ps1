@@ -37,6 +37,9 @@ param(
     [switch]$UseDeviceCode,
 
     [Parameter(Mandatory = $false)]
+    [switch]$DisableExchangeWAM,
+
+    [Parameter(Mandatory = $false)]
     [string]$OutputRoot = ".\Output"
 )
 
@@ -97,7 +100,7 @@ New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 $issues = [System.Collections.Generic.List[object]]::new()
 
 Connect-GraphInteractive -TenantLabel "Target" -Scopes @("Directory.Read.All", "User.Read.All", "Organization.Read.All") -ExpectedTenantId $TargetTenantId -UseDeviceCode:$UseDeviceCode | Out-Null
-Connect-ExchangeInteractive -TenantLabel "Target" -ExpectedTenantId $TargetTenantId -AdminUpn $TargetAdminUpn -UseDeviceCode:$UseDeviceCode | Out-Null
+Connect-ExchangeInteractive -TenantLabel "Target" -ExpectedTenantId $TargetTenantId -AdminUpn $TargetAdminUpn -UseDeviceCode:$UseDeviceCode -DisableWAM:$DisableExchangeWAM | Out-Null
 Connect-SPOInteractive -TenantLabel "Target" -AdminUrl $TargetTenantAdminUrl -UseDeviceCode:$UseDeviceCode | Out-Null
 
 $targetOneDrives = Get-SPOSite -IncludePersonalSite $true -Limit All |
@@ -195,7 +198,7 @@ $targetResults = foreach ($row in $migrationRows) {
 Disconnect-ExchangeOnline -Confirm:$false
 Disconnect-MgGraph | Out-Null
 
-Connect-ExchangeInteractive -TenantLabel "Source" -ExpectedTenantId $SourceTenantId -AdminUpn $SourceAdminUpn -UseDeviceCode:$UseDeviceCode | Out-Null
+Connect-ExchangeInteractive -TenantLabel "Source" -ExpectedTenantId $SourceTenantId -AdminUpn $SourceAdminUpn -UseDeviceCode:$UseDeviceCode -DisableWAM:$DisableExchangeWAM | Out-Null
 Connect-SPOInteractive -TenantLabel "Source" -AdminUrl $SourceTenantAdminUrl -UseDeviceCode:$UseDeviceCode | Out-Null
 
 $sourceResults = foreach ($row in $migrationRows) {

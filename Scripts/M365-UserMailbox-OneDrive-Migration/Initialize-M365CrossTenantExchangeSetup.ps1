@@ -22,6 +22,9 @@ param(
     [switch]$UseDeviceCode,
 
     [Parameter(Mandatory = $false)]
+    [switch]$DisableExchangeWAM,
+
+    [Parameter(Mandatory = $false)]
     [string]$OutputRoot = ".\Output"
 )
 
@@ -108,7 +111,7 @@ $consentUrl = "https://login.microsoftonline.com/{0}/adminconsent?client_id={1}&
 
 switch ($Phase) {
     "PrepareTargetExchange" {
-        Connect-ExchangeInteractive -TenantLabel "Target" -ExpectedTenantId $targetTenantId -AdminUpn $targetAdminUpn -UseDeviceCode:$UseDeviceCode | Out-Null
+        Connect-ExchangeInteractive -TenantLabel "Target" -ExpectedTenantId $targetTenantId -AdminUpn $targetAdminUpn -UseDeviceCode:$UseDeviceCode -DisableWAM:$DisableExchangeWAM | Out-Null
         Enable-OrgCustomizationIfNeeded
 
         $existingEndpoint = Get-MigrationEndpoint -Identity $targetEndpointName -ErrorAction SilentlyContinue
@@ -159,7 +162,7 @@ switch ($Phase) {
     }
 
     "PrepareSourceExchange" {
-        Connect-ExchangeInteractive -TenantLabel "Source" -ExpectedTenantId $sourceTenantId -AdminUpn $sourceAdminUpn -UseDeviceCode:$UseDeviceCode | Out-Null
+        Connect-ExchangeInteractive -TenantLabel "Source" -ExpectedTenantId $sourceTenantId -AdminUpn $sourceAdminUpn -UseDeviceCode:$UseDeviceCode -DisableWAM:$DisableExchangeWAM | Out-Null
         Enable-OrgCustomizationIfNeeded
 
         $scopeGroup = Get-DistributionGroup -Identity $sourceScopeGroupName -ErrorAction SilentlyContinue
@@ -206,7 +209,7 @@ switch ($Phase) {
             throw "MigrationCsvPath is required for AddUsersToSourceScopeGroup."
         }
 
-        Connect-ExchangeInteractive -TenantLabel "Source" -ExpectedTenantId $sourceTenantId -AdminUpn $sourceAdminUpn -UseDeviceCode:$UseDeviceCode | Out-Null
+        Connect-ExchangeInteractive -TenantLabel "Source" -ExpectedTenantId $sourceTenantId -AdminUpn $sourceAdminUpn -UseDeviceCode:$UseDeviceCode -DisableWAM:$DisableExchangeWAM | Out-Null
         $rows = Import-Csv -Path $MigrationCsvPath
         $results = [System.Collections.Generic.List[object]]::new()
 
@@ -229,7 +232,7 @@ switch ($Phase) {
             throw "TestMailbox is required for ValidateTargetEndpoint."
         }
 
-        Connect-ExchangeInteractive -TenantLabel "Target" -ExpectedTenantId $targetTenantId -AdminUpn $targetAdminUpn -UseDeviceCode:$UseDeviceCode | Out-Null
+        Connect-ExchangeInteractive -TenantLabel "Target" -ExpectedTenantId $targetTenantId -AdminUpn $targetAdminUpn -UseDeviceCode:$UseDeviceCode -DisableWAM:$DisableExchangeWAM | Out-Null
         $validation = Test-MigrationServerAvailability -Endpoint $targetEndpointName -TestMailbox $TestMailbox
 
         $validationResult = $validation | Select-Object Result, SupportsCutover, ErrorDetail, Identity

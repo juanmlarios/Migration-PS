@@ -128,7 +128,8 @@ function Connect-ExchangeInteractive {
         [Parameter(Mandatory = $true)][string]$TenantLabel,
         [Parameter(Mandatory = $false)][string]$ExpectedTenantId,
         [Parameter(Mandatory = $false)][string]$AdminUpn,
-        [Parameter(Mandatory = $false)][switch]$UseDeviceCode
+        [Parameter(Mandatory = $false)][switch]$UseDeviceCode,
+        [Parameter(Mandatory = $false)][switch]$DisableWAM
     )
 
     Write-ConnectionBanner -Workload "Exchange Online" -TenantLabel $TenantLabel -ExpectedTenantId $ExpectedTenantId -AdminUpn $AdminUpn -UseDeviceCode:$UseDeviceCode
@@ -156,15 +157,24 @@ function Connect-ExchangeInteractive {
         }
         Connect-ExchangeOnline @connectParams -Device
     } else {
-        try {
-            Connect-ExchangeOnline @connectParams
-        } catch {
-            if (-not $disableWamSupported -or -not (Test-ExchangeWamBrokerFailure -ErrorRecord $_)) {
-                throw
+        if ($DisableWAM.IsPresent) {
+            if (-not $disableWamSupported) {
+                throw "The installed ExchangeOnlineManagement module does not support -DisableWAM. Update the module and retry."
             }
 
-            Write-Warning "Exchange Online interactive sign-in failed in the WAM broker path. Retrying with -DisableWAM."
+            Write-Host "[Auth] Exchange Online will start with WAM disabled for this session."
             Connect-ExchangeOnline @connectParams -DisableWAM
+        } else {
+            try {
+                Connect-ExchangeOnline @connectParams
+            } catch {
+                if (-not $disableWamSupported -or -not (Test-ExchangeWamBrokerFailure -ErrorRecord $_)) {
+                    throw
+                }
+
+                Write-Warning "Exchange Online interactive sign-in failed in the WAM broker path. Retrying with -DisableWAM."
+                Connect-ExchangeOnline @connectParams -DisableWAM
+            }
         }
     }
 
