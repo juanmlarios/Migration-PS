@@ -1,0 +1,2 @@
+SourceUserPrincipalName,SourcePrimarySmtpAddress,TargetUserPrincipalName,TargetAlias,TargetDisplayName,GivenName,Surname,UsageLocation,PreCutoverPrimarySmtpAddress,FinalPrimarySmtpAddress,FinalUserPrincipalName
+user1@orgb.onmicrosoft.com,user1@orgb.com,user1@orga.onmicrosoft.com,user1,User One,User,One,US,,,
