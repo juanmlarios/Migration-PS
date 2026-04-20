@@ -232,9 +232,13 @@ $sourceOneDriveBaseline = foreach ($row in $migrationRows) {
 
 $sourceDomainDependencies = Get-EXORecipient -ResultSize Unlimited |
 Where-Object {
-    $_.PrimarySmtpAddress -like "*@$CustomDomain" -or
-    $_.WindowsEmailAddress -like "*@$CustomDomain" -or
-    ($_.EmailAddresses -join ";") -like "*$CustomDomain*"
+    $primarySmtpAddress = if ($_.PSObject.Properties.Match("PrimarySmtpAddress").Count -gt 0) { [string]$_.PrimarySmtpAddress } else { $null }
+    $windowsEmailAddress = if ($_.PSObject.Properties.Match("WindowsEmailAddress").Count -gt 0) { [string]$_.WindowsEmailAddress } else { $null }
+    $emailAddresses = if ($_.PSObject.Properties.Match("EmailAddresses").Count -gt 0) { @($_.EmailAddresses) } else { @() }
+
+    $primarySmtpAddress -like "*@$CustomDomain" -or
+    $windowsEmailAddress -like "*@$CustomDomain" -or
+    ($emailAddresses -join ";") -like "*$CustomDomain*"
 } |
 Select-Object DisplayName, Alias, RecipientTypeDetails, PrimarySmtpAddress, WindowsEmailAddress, EmailAddresses
 
