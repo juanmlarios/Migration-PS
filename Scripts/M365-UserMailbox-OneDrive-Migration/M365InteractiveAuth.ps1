@@ -228,17 +228,17 @@ function Connect-GraphInteractive {
 
     if ($UseDeviceCode.IsPresent) {
         if ($connectCommand.Parameters.ContainsKey("UseDeviceAuthentication")) {
-            Connect-MgGraph @connectParams -UseDeviceAuthentication | Out-Null
+            Connect-MgGraph @connectParams -UseDeviceAuthentication
         } else {
             $deviceParam = $connectCommand.Parameters.ContainsKey("UseDeviceCode")
             if (-not $deviceParam) {
                 throw "The installed Microsoft.Graph.Authentication module does not support device code authentication. Update the module and retry."
             }
 
-            Connect-MgGraph @connectParams -UseDeviceCode | Out-Null
+            Connect-MgGraph @connectParams -UseDeviceCode
         }
     } else {
-        Connect-MgGraph @connectParams | Out-Null
+        Connect-MgGraph @connectParams
     }
 
     $context = Get-MgContext
