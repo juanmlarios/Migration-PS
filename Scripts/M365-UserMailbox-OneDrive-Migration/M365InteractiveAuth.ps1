@@ -88,6 +88,41 @@ function Write-ConnectionBanner {
     Write-Host ("[Auth] Connect {0}" -f ($details -join " | "))
 }
 
+function Get-ErrorRecordText {
+    param([Parameter(Mandatory = $true)][System.Management.Automation.ErrorRecord]$ErrorRecord)
+
+    $segments = [System.Collections.Generic.List[string]]::new()
+
+    if ($ErrorRecord.Exception) {
+        $segments.Add($ErrorRecord.Exception.ToString())
+    }
+
+    $segments.Add(($ErrorRecord | Out-String))
+    return ($segments -join [Environment]::NewLine)
+}
+
+function Test-ExchangeWamBrokerFailure {
+    param([Parameter(Mandatory = $true)][System.Management.Automation.ErrorRecord]$ErrorRecord)
+
+    $errorText = Get-ErrorRecordText -ErrorRecord $ErrorRecord
+    $wamFailurePatterns = @(
+        "RuntimeBroker",
+        "BrokerExtension",
+        "FetchTokensFromBrokerAsync",
+        "Object reference not set to an instance of an object",
+        "A specified logon session does not exist",
+        "0xffffffff80070520"
+    )
+
+    foreach ($pattern in $wamFailurePatterns) {
+        if ($errorText -match [regex]::Escape($pattern)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function Connect-ExchangeInteractive {
     param(
         [Parameter(Mandatory = $true)][string]$TenantLabel,
@@ -103,16 +138,34 @@ function Connect-ExchangeInteractive {
         $existingConnectionIds = @(Get-ConnectionInformation -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ConnectionId)
     }
 
+    $connectCommand = Get-Command Connect-ExchangeOnline
+    $disableWamSupported = $connectCommand.Parameters.ContainsKey("DisableWAM")
+
+    $connectParams = @{
+        ShowBanner = $false
+    }
+
+    if ($AdminUpn) {
+        $connectParams["UserPrincipalName"] = $AdminUpn
+    }
+
     if ($UseDeviceCode.IsPresent) {
         $deviceParam = (Get-Command Connect-ExchangeOnline).Parameters.ContainsKey("Device")
         if (-not $deviceParam) {
             throw "The installed ExchangeOnlineManagement module does not support -Device. Update the module and retry."
         }
-        Connect-ExchangeOnline -Device -ShowBanner:$false
-    } elseif ($AdminUpn) {
-        Connect-ExchangeOnline -UserPrincipalName $AdminUpn -ShowBanner:$false
+        Connect-ExchangeOnline @connectParams -Device
     } else {
-        Connect-ExchangeOnline -ShowBanner:$false
+        try {
+            Connect-ExchangeOnline @connectParams
+        } catch {
+            if (-not $disableWamSupported -or -not (Test-ExchangeWamBrokerFailure -ErrorRecord $_)) {
+                throw
+            }
+
+            Write-Warning "Exchange Online interactive sign-in failed in the WAM broker path. Retrying with -DisableWAM."
+            Connect-ExchangeOnline @connectParams -DisableWAM
+        }
     }
 
     $connections = @(Get-ConnectionInformation)
