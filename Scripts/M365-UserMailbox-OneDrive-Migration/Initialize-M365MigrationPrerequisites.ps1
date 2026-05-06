@@ -59,6 +59,33 @@ function Get-InstalledCommand {
     return Get-Command $Command -ErrorAction SilentlyContinue
 }
 
+function Get-SharePointOnlineInstalledVersion {
+    $module = Get-Module -ListAvailable -Name Microsoft.Online.SharePoint.PowerShell |
+    Sort-Object Version -Descending |
+    Select-Object -First 1
+
+    if ($module) {
+        return $module.Version
+    }
+
+    if ($PSVersionTable.PSVersion.Major -ge 7 -and $IsWindows) {
+        $versionText = powershell.exe -NoProfile -Command @"
+`$module = Get-Module -ListAvailable -Name Microsoft.Online.SharePoint.PowerShell | Sort-Object Version -Descending | Select-Object -First 1
+if (`$module) { `$module.Version.ToString() }
+"@
+
+        $versionLine = @($versionText) |
+        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+        Select-Object -First 1
+
+        if ($LASTEXITCODE -eq 0 -and $versionLine) {
+            return [version]$versionLine
+        }
+    }
+
+    return $null
+}
+
 function Test-CommandParameter {
     param(
         [Parameter(Mandatory = $true)][string]$Command,
@@ -159,12 +186,16 @@ function Ensure-SharePointOnlineModuleVersion {
         [Parameter(Mandatory = $true)][version]$MinimumVersion
     )
 
+    $installedVersion = Get-SharePointOnlineInstalledVersion
     $importedModule = Import-SharePointOnlineModule
-    if ($importedModule -and $importedModule.Version -ge $MinimumVersion) {
+    $connectCommand = Get-InstalledCommand -Command "Connect-SPOService"
+    $useSystemBrowserReady = $connectCommand -and $connectCommand.Parameters.ContainsKey("UseSystemBrowser")
+
+    if ($installedVersion -and $installedVersion -ge $MinimumVersion -and $useSystemBrowserReady) {
         return [pscustomobject]@{
             Module           = "Microsoft.Online.SharePoint.PowerShell"
             Installed        = $true
-            InstalledVersion = $importedModule.Version
+            InstalledVersion = $installedVersion
             MinimumVersion   = $MinimumVersion
             Action           = "None"
             Status           = "Ready"
@@ -174,8 +205,8 @@ function Ensure-SharePointOnlineModuleVersion {
     if (-not $Install.IsPresent) {
         return [pscustomobject]@{
             Module           = "Microsoft.Online.SharePoint.PowerShell"
-            Installed        = [bool]$importedModule
-            InstalledVersion = if ($importedModule) { $importedModule.Version } else { $null }
+            Installed        = [bool]$installedVersion
+            InstalledVersion = $installedVersion
             MinimumVersion   = $MinimumVersion
             Action           = "InstallOrUpdateRequired"
             Status           = "MissingOrOutdated"
@@ -206,15 +237,22 @@ Install-Module -Name Microsoft.Online.SharePoint.PowerShell -Scope $Scope -Minim
         Install-Module -Name Microsoft.Online.SharePoint.PowerShell -Scope $Scope -MinimumVersion $MinimumVersion.ToString() -Force -AllowClobber | Out-Null
     }
 
-    $updatedModule = Import-SharePointOnlineModule
-    if (-not $updatedModule -or $updatedModule.Version -lt $MinimumVersion) {
-        throw "Module 'Microsoft.Online.SharePoint.PowerShell' is still unavailable or below the required version after installation."
+    $updatedVersion = Get-SharePointOnlineInstalledVersion
+    Import-SharePointOnlineModule | Out-Null
+    $updatedConnectCommand = Get-InstalledCommand -Command "Connect-SPOService"
+
+    if (-not $updatedVersion -or $updatedVersion -lt $MinimumVersion) {
+        throw "Module 'Microsoft.Online.SharePoint.PowerShell' is installed below the required version after installation. Installed version: $updatedVersion. Minimum required version: $MinimumVersion."
+    }
+
+    if (-not $updatedConnectCommand -or -not $updatedConnectCommand.Parameters.ContainsKey("UseSystemBrowser")) {
+        throw "Module 'Microsoft.Online.SharePoint.PowerShell' imported, but Connect-SPOService -UseSystemBrowser is not available in this PowerShell 7 session. Restart PowerShell 7 and rerun prerequisites."
     }
 
     return [pscustomobject]@{
         Module           = "Microsoft.Online.SharePoint.PowerShell"
         Installed        = $true
-        InstalledVersion = $updatedModule.Version
+        InstalledVersion = $updatedVersion
         MinimumVersion   = $MinimumVersion
         Action           = "InstalledOrUpdated"
         Status           = "Ready"

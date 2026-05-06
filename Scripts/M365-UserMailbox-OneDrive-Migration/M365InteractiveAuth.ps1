@@ -55,6 +55,33 @@ function Assert-ModuleMinimumVersion {
     }
 }
 
+function Get-SharePointOnlineInstalledVersion {
+    $module = Get-Module -ListAvailable -Name Microsoft.Online.SharePoint.PowerShell |
+    Sort-Object Version -Descending |
+    Select-Object -First 1
+
+    if ($module) {
+        return $module.Version
+    }
+
+    if ($PSVersionTable.PSVersion.Major -ge 7 -and $IsWindows) {
+        $versionText = powershell.exe -NoProfile -Command @"
+`$module = Get-Module -ListAvailable -Name Microsoft.Online.SharePoint.PowerShell | Sort-Object Version -Descending | Select-Object -First 1
+if (`$module) { `$module.Version.ToString() }
+"@
+
+        $versionLine = @($versionText) |
+        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+        Select-Object -First 1
+
+        if ($LASTEXITCODE -eq 0 -and $versionLine) {
+            return [version]$versionLine
+        }
+    }
+
+    return $null
+}
+
 function Assert-MigrationModuleSet {
     Assert-PowerShellSeven
     Assert-ModuleMinimumVersion -Name ExchangeOnlineManagement -MinimumVersion "3.7.2"
@@ -63,9 +90,15 @@ function Assert-MigrationModuleSet {
     Assert-ModuleMinimumVersion -Name Microsoft.Graph.Identity.DirectoryManagement -MinimumVersion "2.0.0"
     Assert-ModuleMinimumVersion -Name Microsoft.Graph.Groups -MinimumVersion "2.0.0"
     Assert-ModuleMinimumVersion -Name Microsoft.Graph.Identity.SignIns -MinimumVersion "2.0.0"
-    $spoModule = Import-SharePointOnlineModule
-    if ($spoModule.Version -lt [version]"16.0.0") {
-        throw "Module 'Microsoft.Online.SharePoint.PowerShell' version $($spoModule.Version) is too old. Minimum required version is 16.0.0."
+    $spoVersion = Get-SharePointOnlineInstalledVersion
+    if (-not $spoVersion -or $spoVersion -lt [version]"16.0.0") {
+        throw "Module 'Microsoft.Online.SharePoint.PowerShell' version $spoVersion is too old or unavailable. Minimum required version is 16.0.0."
+    }
+
+    Import-SharePointOnlineModule | Out-Null
+    $spoCommand = Get-Command Connect-SPOService -ErrorAction SilentlyContinue
+    if (-not $spoCommand -or -not $spoCommand.Parameters.ContainsKey("UseSystemBrowser")) {
+        throw "Module 'Microsoft.Online.SharePoint.PowerShell' imported, but Connect-SPOService -UseSystemBrowser is not available in this PowerShell 7 session. Restart PowerShell 7 and rerun prerequisites."
     }
 }
 
