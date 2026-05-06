@@ -384,7 +384,7 @@ function Connect-GraphInteractive {
             throw "The installed Microsoft.Graph.Authentication module does not support -UseDeviceCode. Update the module and retry."
         }
 
-        Connect-MgGraph @connectParams -UseDeviceCode
+        Connect-MgGraph @connectParams -UseDeviceCode | Out-Host
     } else {
         Connect-MgGraph @connectParams
     }

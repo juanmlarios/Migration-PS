@@ -122,7 +122,7 @@ Write-Host "Connecting to source Microsoft Graph..."
 Connect-GraphInteractive -TenantLabel "Source" -Scopes @("Directory.Read.All", "User.Read.All", "Group.Read.All", "Domain.Read.All", "Organization.Read.All") -ExpectedTenantId $SourceTenantId -UseDeviceCode:$UseDeviceCode | Out-Null
 
 Write-Host "Connecting to source Exchange Online..."
-Connect-ExchangeInteractive -TenantLabel "Source" -ExpectedTenantId $SourceTenantId -AdminUpn $SourceAdminUpn -UseDeviceCode:$UseDeviceCode -DisableWAM:$DisableExchangeWAM | Out-Null
+Connect-ExchangeInteractive -TenantLabel "Source" -ExpectedTenantId $SourceTenantId -AdminUpn $SourceAdminUpn -UseDeviceCode -DisableWAM:$DisableExchangeWAM | Out-Null
 
 Write-Host "Connecting to source SharePoint Online..."
 Connect-SPOInteractive -TenantLabel "Source" -AdminUrl $SourceTenantAdminUrl -UseDeviceCode:$UseDeviceCode | Out-Null
@@ -251,7 +251,7 @@ Write-Host "Connecting to target Microsoft Graph..."
 Connect-GraphInteractive -TenantLabel "Target" -Scopes @("Directory.Read.All", "User.Read.All", "Organization.Read.All") -ExpectedTenantId $TargetTenantId -UseDeviceCode:$UseDeviceCode | Out-Null
 
 Write-Host "Connecting to target Exchange Online..."
-Connect-ExchangeInteractive -TenantLabel "Target" -ExpectedTenantId $TargetTenantId -AdminUpn $TargetAdminUpn -UseDeviceCode:$UseDeviceCode -DisableWAM:$DisableExchangeWAM | Out-Null
+Connect-ExchangeInteractive -TenantLabel "Target" -ExpectedTenantId $TargetTenantId -AdminUpn $TargetAdminUpn -UseDeviceCode -DisableWAM:$DisableExchangeWAM | Out-Null
 
 Write-Host "Connecting to target SharePoint Online..."
 Connect-SPOInteractive -TenantLabel "Target" -AdminUrl $TargetTenantAdminUrl -UseDeviceCode:$UseDeviceCode | Out-Null
