@@ -28,7 +28,7 @@ param(
     [switch]$UseDeviceCode,
 
     [Parameter(Mandatory = $false)]
-    [switch]$DisableExchangeWAM,
+    [switch]$DisableExchangeWAM, ##this should have changed 
 
     [Parameter(Mandatory = $false)]
     [string]$OutputRoot = ".\Output"
@@ -136,20 +136,21 @@ $sourceMailboxBaseline = foreach ($row in $migrationRows) {
     $sourceUser = $null
 
     try {
-        $sourceUser = Get-MgUser -UserId $row.SourceUserPrincipalName -Property GivenName,Surname,DisplayName,UserPrincipalName
-    } catch {
+        $sourceUser = Get-MgUser -UserId $row.SourceUserPrincipalName -Property GivenName, Surname, DisplayName, UserPrincipalName
+    }
+    catch {
         $sourceUser = $null
     }
 
     $sourceOnMicrosoftAddress =
     ($mailbox.EmailAddresses |
-        Where-Object { $_ -cmatch '^smtp:.*\.onmicrosoft\.com$' } |
-        ForEach-Object { $_.Substring(5) } |
-        Select-Object -First 1)
+    Where-Object { $_ -cmatch '^smtp:.*\.onmicrosoft\.com$' } |
+    ForEach-Object { $_.Substring(5) } |
+    Select-Object -First 1)
 
     $x500Addresses =
     ($mailbox.EmailAddresses |
-        Where-Object { $_ -cmatch '^x500:' })
+    Where-Object { $_ -cmatch '^x500:' })
 
     if (-not $sourceOnMicrosoftAddress) {
         $issues.Add([pscustomobject]@{
@@ -174,29 +175,29 @@ $sourceMailboxBaseline = foreach ($row in $migrationRows) {
     $finalUpn = if ($row.FinalUserPrincipalName) { $row.FinalUserPrincipalName } else { $finalPrimary }
 
     [pscustomobject]@{
-        SourceUserPrincipalName    = $row.SourceUserPrincipalName
-        SourcePrimarySmtpAddress   = $row.SourcePrimarySmtpAddress
-        SourceOnMicrosoftAddress   = $sourceOnMicrosoftAddress
-        SourceAlias                = $mailbox.Alias
-        SourceDisplayName          = $mailbox.DisplayName
-        GivenName                  = if ($row.GivenName) { $row.GivenName } elseif ($sourceUser) { $sourceUser.GivenName } else { $null }
-        Surname                    = if ($row.Surname) { $row.Surname } elseif ($sourceUser) { $sourceUser.Surname } else { $null }
-        TargetUserPrincipalName    = $row.TargetUserPrincipalName
-        TargetAlias                = $row.TargetAlias
-        TargetDisplayName          = $row.TargetDisplayName
-        UsageLocation              = $row.UsageLocation
+        SourceUserPrincipalName      = $row.SourceUserPrincipalName
+        SourcePrimarySmtpAddress     = $row.SourcePrimarySmtpAddress
+        SourceOnMicrosoftAddress     = $sourceOnMicrosoftAddress
+        SourceAlias                  = $mailbox.Alias
+        SourceDisplayName            = $mailbox.DisplayName
+        GivenName                    = if ($row.GivenName) { $row.GivenName } elseif ($sourceUser) { $sourceUser.GivenName } else { $null }
+        Surname                      = if ($row.Surname) { $row.Surname } elseif ($sourceUser) { $sourceUser.Surname } else { $null }
+        TargetUserPrincipalName      = $row.TargetUserPrincipalName
+        TargetAlias                  = $row.TargetAlias
+        TargetDisplayName            = $row.TargetDisplayName
+        UsageLocation                = $row.UsageLocation
         PreCutoverPrimarySmtpAddress = $preCutoverPrimary
-        FinalPrimarySmtpAddress    = $finalPrimary
-        FinalUserPrincipalName     = $finalUpn
-        ExchangeGuid               = $mailbox.ExchangeGuid
-        ArchiveGuid                = $mailbox.ArchiveGuid
-        LegacyExchangeDn           = $mailbox.LegacyExchangeDN
-        X500Addresses              = ($x500Addresses -join "|")
-        TotalItemSize              = $stats.TotalItemSize
-        ItemCount                  = $stats.ItemCount
-        LitigationHoldEnabled      = $mailbox.LitigationHoldEnabled
-        RetentionHoldEnabled       = $mailbox.RetentionHoldEnabled
-        InPlaceHolds               = ($mailbox.InPlaceHolds -join ";")
+        FinalPrimarySmtpAddress      = $finalPrimary
+        FinalUserPrincipalName       = $finalUpn
+        ExchangeGuid                 = $mailbox.ExchangeGuid
+        ArchiveGuid                  = $mailbox.ArchiveGuid
+        LegacyExchangeDn             = $mailbox.LegacyExchangeDN
+        X500Addresses                = ($x500Addresses -join "|")
+        TotalItemSize                = $stats.TotalItemSize
+        ItemCount                    = $stats.ItemCount
+        LitigationHoldEnabled        = $mailbox.LitigationHoldEnabled
+        RetentionHoldEnabled         = $mailbox.RetentionHoldEnabled
+        InPlaceHolds                 = ($mailbox.InPlaceHolds -join ";")
     }
 }
 
@@ -210,7 +211,8 @@ $sourceOneDriveBaseline = foreach ($row in $migrationRows) {
                 ObjectId = $row.SourceUserPrincipalName
                 Detail   = "No source OneDrive personal site was found."
             })
-    } elseif ($site.StorageUsageCurrent -gt 5242880) {
+    }
+    elseif ($site.StorageUsageCurrent -gt 5242880) {
         $issues.Add([pscustomobject]@{
                 Workload = "OneDrive"
                 Severity = "Blocker"
@@ -261,14 +263,16 @@ $targetReadiness = foreach ($row in $sourceMailboxBaseline) {
     $graphUser = $null
     try {
         $graphUser = Get-MgUser -UserId $row.TargetUserPrincipalName -Property Id, DisplayName, UserPrincipalName, AssignedLicenses, Mail
-    } catch {
+    }
+    catch {
         $graphUser = $null
     }
 
     $recipient = $null
     try {
         $recipient = Get-EXORecipient -Identity $row.TargetUserPrincipalName -ErrorAction Stop
-    } catch {
+    }
+    catch {
         $recipient = $null
     }
 
