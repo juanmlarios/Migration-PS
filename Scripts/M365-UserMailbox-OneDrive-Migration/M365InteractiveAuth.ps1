@@ -10,16 +10,27 @@ function Import-SharePointOnlineModule {
         return $loadedModule
     }
 
+    if ($PSVersionTable.PSVersion.Major -ge 7 -and $IsWindows) {
+        try {
+            return Import-Module Microsoft.Online.SharePoint.PowerShell -UseWindowsPowerShell -PassThru -ErrorAction Stop
+        }
+        catch {
+            throw @(
+                "Required module 'Microsoft.Online.SharePoint.PowerShell' could not be imported through Windows PowerShell compatibility.",
+                "PowerShell 7 requires: Import-Module Microsoft.Online.SharePoint.PowerShell -UseWindowsPowerShell",
+                "Install or update it from Windows PowerShell 5.1, then restart PowerShell 7:",
+                "  powershell.exe -NoProfile -Command ""Install-Module Microsoft.Online.SharePoint.PowerShell -Scope CurrentUser -Force -AllowClobber""",
+                "Original error: $($_.Exception.Message)"
+            ) -join [Environment]::NewLine
+        }
+    }
+
     $availableModule = Get-Module -ListAvailable -Name Microsoft.Online.SharePoint.PowerShell |
     Sort-Object Version -Descending |
     Select-Object -First 1
 
     if (-not $availableModule) {
         throw "Required module 'Microsoft.Online.SharePoint.PowerShell' is not installed."
-    }
-
-    if ($PSVersionTable.PSVersion.Major -ge 7 -and $IsWindows) {
-        return Import-Module Microsoft.Online.SharePoint.PowerShell -UseWindowsPowerShell -PassThru -ErrorAction Stop
     }
 
     return Import-Module Microsoft.Online.SharePoint.PowerShell -PassThru -ErrorAction Stop
@@ -46,14 +57,16 @@ function Assert-ModuleMinimumVersion {
 
 function Assert-MigrationModuleSet {
     Assert-PowerShellSeven
-    Assert-ModuleMinimumVersion -Name ExchangeOnlineManagement -MinimumVersion "3.0.0"
+    Assert-ModuleMinimumVersion -Name ExchangeOnlineManagement -MinimumVersion "3.7.2"
     Assert-ModuleMinimumVersion -Name Microsoft.Graph.Authentication -MinimumVersion "2.0.0"
     Assert-ModuleMinimumVersion -Name Microsoft.Graph.Users -MinimumVersion "2.0.0"
     Assert-ModuleMinimumVersion -Name Microsoft.Graph.Identity.DirectoryManagement -MinimumVersion "2.0.0"
     Assert-ModuleMinimumVersion -Name Microsoft.Graph.Groups -MinimumVersion "2.0.0"
     Assert-ModuleMinimumVersion -Name Microsoft.Graph.Identity.SignIns -MinimumVersion "2.0.0"
-    Assert-ModuleMinimumVersion -Name Microsoft.Online.SharePoint.PowerShell -MinimumVersion "16.0.0"
-    Import-SharePointOnlineModule | Out-Null
+    $spoModule = Import-SharePointOnlineModule
+    if ($spoModule.Version -lt [version]"16.0.0") {
+        throw "Module 'Microsoft.Online.SharePoint.PowerShell' version $($spoModule.Version) is too old. Minimum required version is 16.0.0."
+    }
 }
 
 function Write-ConnectionBanner {
@@ -123,6 +136,70 @@ function Test-ExchangeWamBrokerFailure {
     return $false
 }
 
+function Get-ExchangeOnlineModuleDetail {
+    $loadedModule = Get-Module -Name ExchangeOnlineManagement | Sort-Object Version -Descending | Select-Object -First 1
+    if ($loadedModule) {
+        return $loadedModule
+    }
+
+    return Get-Module -ListAvailable -Name ExchangeOnlineManagement |
+    Sort-Object Version -Descending |
+    Select-Object -First 1
+}
+
+function New-ExchangeWamFailureMessage {
+    param(
+        [Parameter(Mandatory = $true)][System.Management.Automation.ErrorRecord]$ErrorRecord,
+        [Parameter(Mandatory = $true)][string]$AttemptedAuthMode
+    )
+
+    $module = Get-ExchangeOnlineModuleDetail
+    $moduleVersion = if ($module) { $module.Version } else { "unknown" }
+    $modulePath = if ($module) { $module.ModuleBase } else { "unknown" }
+    $originalMessage = if ($ErrorRecord.Exception) { $ErrorRecord.Exception.Message } else { "unknown" }
+
+    return @(
+        "Exchange Online sign-in failed in the Microsoft WAM/MSAL broker path.",
+        "Attempted auth mode: $AttemptedAuthMode",
+        "ExchangeOnlineManagement version: $moduleVersion",
+        "ExchangeOnlineManagement path: $modulePath",
+        "Original error: $originalMessage",
+        "",
+        "Recommended retry: start a new PowerShell 7 session and run the script with -UseDeviceCode.",
+        "If browser auth is required, update ExchangeOnlineManagement and retry with -DisableExchangeWAM."
+    ) -join [Environment]::NewLine
+}
+
+function Invoke-ExchangeOnlineConnect {
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$ConnectParams,
+        [Parameter(Mandatory = $true)][string]$AuthMode,
+        [Parameter(Mandatory = $false)][switch]$Device,
+        [Parameter(Mandatory = $false)][switch]$DisableWAM
+    )
+
+    try {
+        if ($Device.IsPresent) {
+            Connect-ExchangeOnline @ConnectParams -Device
+            return
+        }
+
+        if ($DisableWAM.IsPresent) {
+            Connect-ExchangeOnline @ConnectParams -DisableWAM
+            return
+        }
+
+        Connect-ExchangeOnline @ConnectParams
+    }
+    catch {
+        if (Test-ExchangeWamBrokerFailure -ErrorRecord $_) {
+            throw (New-ExchangeWamFailureMessage -ErrorRecord $_ -AttemptedAuthMode $AuthMode)
+        }
+
+        throw
+    }
+}
+
 function Connect-ExchangeInteractive {
     param(
         [Parameter(Mandatory = $true)][string]$TenantLabel,
@@ -141,6 +218,10 @@ function Connect-ExchangeInteractive {
 
     $connectCommand = Get-Command Connect-ExchangeOnline
     $disableWamSupported = $connectCommand.Parameters.ContainsKey("DisableWAM")
+    $exchangeModule = Get-ExchangeOnlineModuleDetail
+    if ($exchangeModule) {
+        Write-Host ("[Auth] ExchangeOnlineManagement module | version={0} | path={1}" -f $exchangeModule.Version, $exchangeModule.ModuleBase)
+    }
 
     $connectParams = @{
         ShowBanner = $false
@@ -155,7 +236,7 @@ function Connect-ExchangeInteractive {
         if (-not $deviceParam) {
             throw "The installed ExchangeOnlineManagement module does not support -Device. Update the module and retry."
         }
-        Connect-ExchangeOnline @connectParams -Device
+        Invoke-ExchangeOnlineConnect -ConnectParams $connectParams -AuthMode "device-code" -Device
     } else {
         if ($DisableWAM.IsPresent) {
             if (-not $disableWamSupported) {
@@ -163,17 +244,17 @@ function Connect-ExchangeInteractive {
             }
 
             Write-Host "[Auth] Exchange Online will start with WAM disabled for this session."
-            Connect-ExchangeOnline @connectParams -DisableWAM
+            Invoke-ExchangeOnlineConnect -ConnectParams $connectParams -AuthMode "interactive-browser-disable-wam" -DisableWAM
         } else {
             try {
-                Connect-ExchangeOnline @connectParams
+                Invoke-ExchangeOnlineConnect -ConnectParams $connectParams -AuthMode "interactive-browser"
             } catch {
                 if (-not $disableWamSupported -or -not (Test-ExchangeWamBrokerFailure -ErrorRecord $_)) {
                     throw
                 }
 
                 Write-Warning "Exchange Online interactive sign-in failed in the WAM broker path. Retrying with -DisableWAM."
-                Connect-ExchangeOnline @connectParams -DisableWAM
+                Invoke-ExchangeOnlineConnect -ConnectParams $connectParams -AuthMode "interactive-browser-disable-wam" -DisableWAM
             }
         }
     }

@@ -203,12 +203,14 @@ Behavior:
 - each script prints a short pre-connection banner before prompting
 - each Exchange and Graph connection validates the tenant after sign-in when you provide the expected tenant ID
 - SharePoint verifies admin access against the requested admin URL after sign-in
+- ExchangeOnlineManagement 3.7.2 or later is required so WAM issues can be retried with `-DisableWAM`
+- PowerShell 7 imports SharePoint Online through Windows PowerShell compatibility with `-UseWindowsPowerShell`
 
 Practical recommendation:
 
 - run the prerequisite script before the first migration task
 - always pass `SourceTenantId` and `TargetTenantId` for stronger tenant verification
-- use `-UseDeviceCode` only when browser-based auth is inconvenient
+- use `-UseDeviceCode` when browser-based auth or WAM broker auth fails
 - keep `AdminUserPrincipalName` values populated in `CrossTenantSetup.psd1` for cleaner Exchange prompts
 
 ## Migration Phases

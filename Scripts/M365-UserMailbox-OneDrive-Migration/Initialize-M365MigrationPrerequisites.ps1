@@ -19,16 +19,21 @@ function Import-SharePointOnlineModule {
         return $loadedModule
     }
 
+    if ($PSVersionTable.PSVersion.Major -ge 7 -and $IsWindows) {
+        try {
+            return Import-Module Microsoft.Online.SharePoint.PowerShell -UseWindowsPowerShell -PassThru -ErrorAction Stop
+        }
+        catch {
+            return $null
+        }
+    }
+
     $availableModule = Get-Module -ListAvailable -Name Microsoft.Online.SharePoint.PowerShell |
     Sort-Object Version -Descending |
     Select-Object -First 1
 
     if (-not $availableModule) {
         return $null
-    }
-
-    if ($PSVersionTable.PSVersion.Major -ge 7 -and $IsWindows) {
-        return Import-Module Microsoft.Online.SharePoint.PowerShell -UseWindowsPowerShell -PassThru -ErrorAction Stop
     }
 
     return Import-Module Microsoft.Online.SharePoint.PowerShell -PassThru -ErrorAction Stop
@@ -52,6 +57,23 @@ function Get-InstalledCommand {
     param([Parameter(Mandatory = $true)][string]$Command)
 
     return Get-Command $Command -ErrorAction SilentlyContinue
+}
+
+function Test-CommandParameter {
+    param(
+        [Parameter(Mandatory = $true)][string]$Command,
+        [Parameter(Mandatory = $true)][string]$Parameter
+    )
+
+    $installedCommand = Get-InstalledCommand -Command $Command
+
+    return [pscustomobject]@{
+        Component   = "CommandParameter"
+        CommandName = $Command
+        Parameter   = $Parameter
+        SourceModule = if ($installedCommand) { $installedCommand.Source } else { $null }
+        Status      = if ($installedCommand -and $installedCommand.Parameters.ContainsKey($Parameter)) { "Ready" } else { "Missing" }
+    }
 }
 
 function Ensure-PackageManagementPrerequisite {
@@ -132,6 +154,73 @@ function Ensure-ModuleVersion {
     }
 }
 
+function Ensure-SharePointOnlineModuleVersion {
+    param(
+        [Parameter(Mandatory = $true)][version]$MinimumVersion
+    )
+
+    $importedModule = Import-SharePointOnlineModule
+    if ($importedModule -and $importedModule.Version -ge $MinimumVersion) {
+        return [pscustomobject]@{
+            Module           = "Microsoft.Online.SharePoint.PowerShell"
+            Installed        = $true
+            InstalledVersion = $importedModule.Version
+            MinimumVersion   = $MinimumVersion
+            Action           = "None"
+            Status           = "Ready"
+        }
+    }
+
+    if (-not $Install.IsPresent) {
+        return [pscustomobject]@{
+            Module           = "Microsoft.Online.SharePoint.PowerShell"
+            Installed        = [bool]$importedModule
+            InstalledVersion = if ($importedModule) { $importedModule.Version } else { $null }
+            MinimumVersion   = $MinimumVersion
+            Action           = "InstallOrUpdateRequired"
+            Status           = "MissingOrOutdated"
+        }
+    }
+
+    Ensure-PackageManagementPrerequisite
+
+    if ($PSVersionTable.PSVersion.Major -ge 7 -and $IsWindows) {
+        $installScript = @"
+`$ErrorActionPreference = 'Stop'
+if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
+    Install-PackageProvider -Name NuGet -Force -Scope $Scope | Out-Null
+}
+`$psGallery = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
+if (`$psGallery -and `$psGallery.InstallationPolicy -ne 'Trusted') {
+    Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+}
+Install-Module -Name Microsoft.Online.SharePoint.PowerShell -Scope $Scope -MinimumVersion '$($MinimumVersion.ToString())' -Force -AllowClobber
+"@
+
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -Command $installScript
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to install Microsoft.Online.SharePoint.PowerShell through Windows PowerShell compatibility."
+        }
+    }
+    else {
+        Install-Module -Name Microsoft.Online.SharePoint.PowerShell -Scope $Scope -MinimumVersion $MinimumVersion.ToString() -Force -AllowClobber | Out-Null
+    }
+
+    $updatedModule = Import-SharePointOnlineModule
+    if (-not $updatedModule -or $updatedModule.Version -lt $MinimumVersion) {
+        throw "Module 'Microsoft.Online.SharePoint.PowerShell' is still unavailable or below the required version after installation."
+    }
+
+    return [pscustomobject]@{
+        Module           = "Microsoft.Online.SharePoint.PowerShell"
+        Installed        = $true
+        InstalledVersion = $updatedModule.Version
+        MinimumVersion   = $MinimumVersion
+        Action           = "InstalledOrUpdated"
+        Status           = "Ready"
+    }
+}
+
 function Test-PowerShellVersion {
     $currentVersion = $PSVersionTable.PSVersion
     return [pscustomobject]@{
@@ -152,13 +241,12 @@ if ($pwshCheck.Status -ne "Ready") {
 }
 
 $requiredModules = @(
-    @{ Name = "ExchangeOnlineManagement"; MinimumVersion = [version]"3.0.0"; AllowPrerelease = $AllowPrereleaseExchangeModule.IsPresent },
+    @{ Name = "ExchangeOnlineManagement"; MinimumVersion = [version]"3.7.2"; AllowPrerelease = $AllowPrereleaseExchangeModule.IsPresent },
     @{ Name = "Microsoft.Graph.Authentication"; MinimumVersion = [version]"2.0.0"; AllowPrerelease = $false },
     @{ Name = "Microsoft.Graph.Users"; MinimumVersion = [version]"2.0.0"; AllowPrerelease = $false },
     @{ Name = "Microsoft.Graph.Identity.DirectoryManagement"; MinimumVersion = [version]"2.0.0"; AllowPrerelease = $false },
     @{ Name = "Microsoft.Graph.Groups"; MinimumVersion = [version]"2.0.0"; AllowPrerelease = $false },
-    @{ Name = "Microsoft.Graph.Identity.SignIns"; MinimumVersion = [version]"2.0.0"; AllowPrerelease = $false },
-    @{ Name = "Microsoft.Online.SharePoint.PowerShell"; MinimumVersion = [version]"16.0.0"; AllowPrerelease = $false }
+    @{ Name = "Microsoft.Graph.Identity.SignIns"; MinimumVersion = [version]"2.0.0"; AllowPrerelease = $false }
 )
 
 foreach ($requiredModule in $requiredModules) {
@@ -170,7 +258,7 @@ foreach ($requiredModule in $requiredModules) {
     )
 }
 
-Import-SharePointOnlineModule | Out-Null
+$results.Add((Ensure-SharePointOnlineModuleVersion -MinimumVersion ([version]"16.0.0")))
 
 $commandChecks = @(
     "Connect-ExchangeOnline",
@@ -189,6 +277,22 @@ foreach ($commandName in $commandChecks) {
             SourceModule     = if ($command) { $command.Source } else { $null }
             Status           = if ($command) { "Ready" } else { "Missing" }
         })
+}
+
+$parameterChecks = @(
+    @{ Command = "Connect-ExchangeOnline"; Parameter = "Device" },
+    @{ Command = "Connect-ExchangeOnline"; Parameter = "DisableWAM" },
+    @{ Command = "Connect-MgGraph"; Parameter = "UseDeviceCode" },
+    @{ Command = "Connect-MgGraph"; Parameter = "NoWelcome" },
+    @{ Command = "Connect-SPOService"; Parameter = "UseSystemBrowser" }
+)
+
+foreach ($parameterCheck in $parameterChecks) {
+    $results.Add(
+        (Test-CommandParameter `
+                -Command $parameterCheck.Command `
+                -Parameter $parameterCheck.Parameter)
+    )
 }
 
 $summary = [pscustomobject]@{

@@ -246,6 +246,8 @@ Workload behavior:
 - Exchange Online: browser auth by default, device code supported
 - Microsoft Graph: browser auth by default, device code supported
 - SharePoint Online: system browser auth only
+- ExchangeOnlineManagement 3.7.2 or later is required for the `-DisableWAM` WAM workaround
+- PowerShell 7 imports SharePoint Online through Windows PowerShell compatibility with `-UseWindowsPowerShell`
 
 What the scripts do at connect time:
 
@@ -257,6 +259,7 @@ What the scripts do at connect time:
 Recommendation:
 
 - always pass tenant IDs where the script supports them
+- use `-UseDeviceCode` when Exchange browser auth fails in the WAM/MSAL broker path
 
 ## Readiness-First Workflow
 
