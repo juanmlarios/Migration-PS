@@ -166,7 +166,7 @@ function New-ExchangeWamFailureMessage {
         "Original error: $originalMessage",
         "",
         "Recommended retry: start a new PowerShell 7 session and run the script with -UseDeviceCode.",
-        "If browser auth is required, update ExchangeOnlineManagement and retry with -DisableExchangeWAM."
+        "Some ExchangeOnlineManagement builds can still enter the WAM broker even when -DisableWAM is supplied."
     ) -join [Environment]::NewLine
 }
 
@@ -218,6 +218,7 @@ function Connect-ExchangeInteractive {
 
     $connectCommand = Get-Command Connect-ExchangeOnline
     $disableWamSupported = $connectCommand.Parameters.ContainsKey("DisableWAM")
+    $deviceParamSupported = $connectCommand.Parameters.ContainsKey("Device")
     $exchangeModule = Get-ExchangeOnlineModuleDetail
     if ($exchangeModule) {
         Write-Host ("[Auth] ExchangeOnlineManagement module | version={0} | path={1}" -f $exchangeModule.Version, $exchangeModule.ModuleBase)
@@ -232,8 +233,7 @@ function Connect-ExchangeInteractive {
     }
 
     if ($UseDeviceCode.IsPresent) {
-        $deviceParam = (Get-Command Connect-ExchangeOnline).Parameters.ContainsKey("Device")
-        if (-not $deviceParam) {
+        if (-not $deviceParamSupported) {
             throw "The installed ExchangeOnlineManagement module does not support -Device. Update the module and retry."
         }
         Invoke-ExchangeOnlineConnect -ConnectParams $connectParams -AuthMode "device-code" -Device
@@ -244,17 +244,44 @@ function Connect-ExchangeInteractive {
             }
 
             Write-Host "[Auth] Exchange Online will start with WAM disabled for this session."
-            Invoke-ExchangeOnlineConnect -ConnectParams $connectParams -AuthMode "interactive-browser-disable-wam" -DisableWAM
+            try {
+                Invoke-ExchangeOnlineConnect -ConnectParams $connectParams -AuthMode "interactive-browser-disable-wam" -DisableWAM
+            } catch {
+                if (-not $deviceParamSupported -or -not (Test-ExchangeWamBrokerFailure -ErrorRecord $_)) {
+                    throw
+                }
+
+                Write-Warning "Exchange Online sign-in still failed in the WAM broker path with -DisableWAM. Retrying with device code auth."
+                Invoke-ExchangeOnlineConnect -ConnectParams $connectParams -AuthMode "device-code-fallback" -Device
+            }
         } else {
             try {
                 Invoke-ExchangeOnlineConnect -ConnectParams $connectParams -AuthMode "interactive-browser"
             } catch {
-                if (-not $disableWamSupported -or -not (Test-ExchangeWamBrokerFailure -ErrorRecord $_)) {
+                if (-not (Test-ExchangeWamBrokerFailure -ErrorRecord $_)) {
                     throw
                 }
 
-                Write-Warning "Exchange Online interactive sign-in failed in the WAM broker path. Retrying with -DisableWAM."
-                Invoke-ExchangeOnlineConnect -ConnectParams $connectParams -AuthMode "interactive-browser-disable-wam" -DisableWAM
+                if ($disableWamSupported) {
+                    try {
+                        Write-Warning "Exchange Online interactive sign-in failed in the WAM broker path. Retrying with -DisableWAM."
+                        Invoke-ExchangeOnlineConnect -ConnectParams $connectParams -AuthMode "interactive-browser-disable-wam" -DisableWAM
+                    } catch {
+                        if (-not $deviceParamSupported -or -not (Test-ExchangeWamBrokerFailure -ErrorRecord $_)) {
+                            throw
+                        }
+
+                        Write-Warning "Exchange Online sign-in still failed in the WAM broker path with -DisableWAM. Retrying with device code auth."
+                        Invoke-ExchangeOnlineConnect -ConnectParams $connectParams -AuthMode "device-code-fallback" -Device
+                    }
+                }
+                elseif ($deviceParamSupported) {
+                    Write-Warning "Exchange Online interactive sign-in failed in the WAM broker path. Retrying with device code auth."
+                    Invoke-ExchangeOnlineConnect -ConnectParams $connectParams -AuthMode "device-code-fallback" -Device
+                }
+                else {
+                    throw "Exchange Online interactive sign-in failed in the WAM broker path, and this module does not support -DisableWAM or -Device."
+                }
             }
         }
     }
